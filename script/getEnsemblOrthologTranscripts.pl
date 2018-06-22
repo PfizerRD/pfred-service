@@ -11,36 +11,42 @@ use strict;
 use Bio::EnsEMBL::Registry;
 use Bio::EnsEMBL::Variation::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::DBSQL::DBAdaptor;
+
 #use BIO::Species;
 use Getopt::Long;
+
 #use lib '/users/dcaffrey/bin';
 
 use ensembl2;
 use fasta2;
 
-my $usage= "$0 -g GeneID -s speciesOfProvidedID -o output.txt -l requestedSpeciesList\n";
-unless (@ARGV>0) { 
-  &validSpecies(); 
-  die $usage;
+my $usage
+    = "$0 -g GeneID -s speciesOfProvidedID -o output.txt -l requestedSpeciesList\n";
+unless ( @ARGV > 0 ) {
+    &validSpecies();
+    die $usage;
 }
 
-my ($id,$inputSpecies,$outfile,$requestedSpeciesList);
-GetOptions( "g=s"=>\$id,
- "s=s"=>\$inputSpecies,
- "o=s"=>\$outfile,
- "l=s"=>\$requestedSpeciesList
-	    ); #= means mandatory, : means optional, s means string, i means int, b means binary
+my ( $id, $inputSpecies, $outfile, $requestedSpeciesList );
+GetOptions(
+    "g=s" => \$id,
+    "s=s" => \$inputSpecies,
+    "o=s" => \$outfile,
+    "l=s" => \$requestedSpeciesList
+    )
+    ; #= means mandatory, : means optional, s means string, i means int, b means binary
 
 print STDERR "running $0 -g $id -s $inputSpecies -o $outfile\n";
 
-my @speciesList=split /,\s*|\s+|;\s*/, $requestedSpeciesList;
-my @requestedSpecies=grep {$_  ne "$inputSpecies"} @speciesList;
-my ($inputSpecies)=&getFullNames(($inputSpecies));
+my @speciesList = split /,\s*|\s+|;\s*/, $requestedSpeciesList;
+my @requestedSpecies = grep { $_ ne "$inputSpecies" } @speciesList;
+my ($inputSpecies) = &getFullNames( ($inputSpecies) );
+
 #my %allSpecies=&getSpeciesSynonyms();
 
 print STDERR "@speciesList : @requestedSpecies \n";
 
-my @requestedSpeciesFullName=&getFullNames(@requestedSpecies);
+my @requestedSpeciesFullName = &getFullNames(@requestedSpecies);
 print STDERR "@requestedSpeciesFullName\n";
 &connect();
 
@@ -48,130 +54,136 @@ print STDERR "@requestedSpeciesFullName\n";
 #print STDERR "inputdbA $inputdbA, $inputSpecies\n";
 
 #my $inputga=$inputdbA->get_GeneAdaptor();
-my $inputga =&getGeneAdaptorForSpecies($inputSpecies);
+my $inputga = &getGeneAdaptorForSpecies($inputSpecies);
 my $inputGene;
-if($id=~ /EN.*G\d+/){
-  $inputGene=$inputga->fetch_by_stable_id($id);
-  print STDERR "input id is $inputSpecies $id; input type GeneID\n";
-  }elsif ($id=~ /EN.*T\d+/){
-    $inputGene=$inputga->fetch_by_transcript_stable_id($id);
+if ( $id =~ /EN.*G\d+/ ) {
+    $inputGene = $inputga->fetch_by_stable_id($id);
+    print STDERR "input id is $inputSpecies $id; input type GeneID\n";
+}
+elsif ( $id =~ /EN.*T\d+/ ) {
+    $inputGene = $inputga->fetch_by_transcript_stable_id($id);
     print STDERR "input id is $inputSpecies $id; input type Transcript ID\n";
-    }else{
-      die "input id is not recongnized as an Ensembl gene or transcript id.\n";
-    }
+}
+else {
+    die "input id is not recongnized as an Ensembl gene or transcript id.\n";
+}
 
-    my $geneName=$inputGene->stable_id;
-    print STDERR "input Gene is $inputSpecies,$geneName\n";
+my $geneName = $inputGene->stable_id;
+print STDERR "input Gene is $inputSpecies,$geneName\n";
 
 #my $inputga=getGeneAdaptorForSpecies($inputSpecies);
 #my $inputGene=
 
-my $member_adaptor=&getComparaMemberAdaptor();
-my $homology_adaptor=&getComparaHomologyAdaptor();
-print STDERR "member adaptor: $member_adaptor; homology adaptor: $homology_adaptor\n";
+my $member_adaptor   = &getComparaMemberAdaptor();
+my $homology_adaptor = &getComparaHomologyAdaptor();
+print STDERR
+    "member adaptor: $member_adaptor; homology adaptor: $homology_adaptor\n";
 
-my @orthologousGenes=&getAllOrthologousGenes($inputGene,$member_adaptor,$homology_adaptor,@requestedSpeciesFullName);
-my @allTranscripts=();
-my @fastaSeqs=();
-my @allSpeciesList=();
-my @boundaries=();
-my @variationDetails=();
-my @allTranscriptNames=();
-my @speciesForGenes=&getSpeciesForGenes($member_adaptor,@orthologousGenes);
+my @orthologousGenes = &getAllOrthologousGenes( $inputGene, $member_adaptor,
+    $homology_adaptor, @requestedSpeciesFullName );
+my @allTranscripts     = ();
+my @fastaSeqs          = ();
+my @allSpeciesList     = ();
+my @boundaries         = ();
+my @variationDetails   = ();
+my @allTranscriptNames = ();
+my @speciesForGenes
+    = &getSpeciesForGenes( $member_adaptor, @orthologousGenes );
 print STDERR "Ortholog Genes: ", scalar @orthologousGenes, "\n";
 
 #iterate over all orthologous genes
-for (my $l=0;$l<@orthologousGenes;$l++){
- my $tmpGeneName=$orthologousGenes[$l]->stable_id;
- print STDERR "Ortholog Gene $l: $tmpGeneName\n";
-   #get transcripts for current gene
-   my @transcripts=&getAllTranscriptsForGene($orthologousGenes[$l]); 
-   push(@allTranscripts,@transcripts);
-   my @transcriptNames=&getNamesForTranscripts(@transcripts);
-   push(@allTranscriptNames,@transcriptNames);
-   #make species list for genes and transcripts
-   #print STDERR "SP $speciesForGenes[$l]\n";
-   my @speciesList=&makeSpeciesList($speciesForGenes[$l],@transcripts);
-   push (@allSpeciesList,@speciesList);
-   #get utrs and exon
-   my @fastaSeqsForTrans=&getUtrsPlusSplicedExonsForTranscriptsInFastaFormat(@transcripts);
-   push(@fastaSeqs,@fastaSeqsForTrans);
- } # next gene ortholog 
+for ( my $l = 0; $l < @orthologousGenes; $l++ ) {
+    my $tmpGeneName = $orthologousGenes[$l]->stable_id;
+    print STDERR "Ortholog Gene $l: $tmpGeneName\n";
+
+    #get transcripts for current gene
+    my @transcripts = &getAllTranscriptsForGene( $orthologousGenes[$l] );
+    push( @allTranscripts, @transcripts );
+    my @transcriptNames = &getNamesForTranscripts(@transcripts);
+    push( @allTranscriptNames, @transcriptNames );
+
+    #make species list for genes and transcripts
+    #print STDERR "SP $speciesForGenes[$l]\n";
+    my @speciesList = &makeSpeciesList( $speciesForGenes[$l], @transcripts );
+    push( @allSpeciesList, @speciesList );
+
+    #get utrs and exon
+    my @fastaSeqsForTrans
+        = &getUtrsPlusSplicedExonsForTranscriptsInFastaFormat(@transcripts);
+    push( @fastaSeqs, @fastaSeqsForTrans );
+}    # next gene ortholog
 
 #&getSpeciesForTranscript($member_adaptor,@allTranscripts);
-my @lengths=&getLengths(@fastaSeqs);
-&printAnnotation($outfile,\@allTranscriptNames,\@allSpeciesList,\@lengths);
+my @lengths = &getLengths(@fastaSeqs);
+&printAnnotation( $outfile, \@allTranscriptNames, \@allSpeciesList,
+    \@lengths );
 exit;
 
 ############################################################################################################
 ############################################################################################################
 
-sub makeSpeciesList{
-  my ($species,@transcripts)=@_;
-  my (@list)=();
-  while (my $tran=shift(@transcripts)){
-    my $name=$tran->stable_id;
-    my $line=$species;
-    push(@list,$line);
-  }
+sub makeSpeciesList {
+    my ( $species, @transcripts ) = @_;
+    my (@list) = ();
+    while ( my $tran = shift(@transcripts) ) {
+        my $name = $tran->stable_id;
+        my $line = $species;
+        push( @list, $line );
+    }
 
-  return @list;
+    return @list;
 
 }
 
-
-sub printAnnotation{
-  my ($speciesFile,$names,$speciesDetails,$lengths)=@_;
-  open (SP,">$speciesFile");
-  print SP ("name\,species\,length\,source\n");
-  for (my $i=0;$i<@$speciesDetails;$i++){
-   $speciesDetails->[$i]=~s/\s/\_/;
-   print SP "$names->[$i]\,$speciesDetails->[$i]\,$lengths->[$i]\,ENSEMBL\n";
- }
- close(SP);
+sub printAnnotation {
+    my ( $speciesFile, $names, $speciesDetails, $lengths ) = @_;
+    open( SP, ">$speciesFile" );
+    print SP ("name\,species\,length\,source\n");
+    for ( my $i = 0; $i < @$speciesDetails; $i++ ) {
+        $speciesDetails->[$i] =~ s/\s/\_/;
+        print SP
+            "$names->[$i]\,$speciesDetails->[$i]\,$lengths->[$i]\,ENSEMBL\n";
+    }
+    close(SP);
 }
-
 
 ####################################
 #converts common names into full names
 ####################################
-sub getFullNames{
-  my (@requestedSpecies)=@_;
-  my %fullSpecies=&getSpeciesSynonyms();
-  my @requestedSpeciesFullName=();
-  for (my $i=0;$i<@requestedSpecies;$i++){
-   if(!$fullSpecies{$requestedSpecies[$i]}){
-    print STDERR "$requestedSpecies[$i] is not a valid species name\n";
-    &validSpecies();
-    exit;
+sub getFullNames {
+    my (@requestedSpecies)       = @_;
+    my %fullSpecies              = &getSpeciesSynonyms();
+    my @requestedSpeciesFullName = ();
+    for ( my $i = 0; $i < @requestedSpecies; $i++ ) {
+        if ( !$fullSpecies{ $requestedSpecies[$i] } ) {
+            print STDERR
+                "$requestedSpecies[$i] is not a valid species name\n";
+            &validSpecies();
+            exit;
 
-
-  }
-  $requestedSpeciesFullName[$i]=$fullSpecies{$requestedSpecies[$i]};
-}
-return @requestedSpeciesFullName;
-}
-
-
-sub validSpecies{
-  my %speciesSyn=&getSpeciesSynonyms();
-  print "Valid species are:\n";
-  while (my($key,$value)=each %speciesSyn){
-   print STDERR "$key\n";
- }
- print STDERR "\n\n";
+        }
+        $requestedSpeciesFullName[$i] = $fullSpecies{ $requestedSpecies[$i] };
+    }
+    return @requestedSpeciesFullName;
 }
 
+sub validSpecies {
+    my %speciesSyn = &getSpeciesSynonyms();
+    print "Valid species are:\n";
+    while ( my ( $key, $value ) = each %speciesSyn ) {
+        print STDERR "$key\n";
+    }
+    print STDERR "\n\n";
+}
 
-
-sub getSpeciesSynonyms{
-  my %species=();
-  $species{"mouse"}="Mus musculus";
-  $species{"rat"}="rattus norvegicus";
-  $species{"human"}="Homo sapiens";
-  $species{"dog"}="canis familiaris";
-  $species{"chimp"}="pan troglodytes";
-  $species{"macaque"}="macaca mulatta";
-  return %species;
+sub getSpeciesSynonyms {
+    my %species = ();
+    $species{"mouse"}   = "Mus musculus";
+    $species{"rat"}     = "rattus norvegicus";
+    $species{"human"}   = "Homo sapiens";
+    $species{"dog"}     = "canis familiaris";
+    $species{"chimp"}   = "pan troglodytes";
+    $species{"macaque"} = "macaca mulatta";
+    return %species;
 }
 
