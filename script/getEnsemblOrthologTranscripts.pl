@@ -8,9 +8,9 @@
 #}
 
 use strict;
-use Bio::EnsEMBL::Registry;
-use Bio::EnsEMBL::Variation::DBSQL::DBAdaptor;
-use Bio::EnsEMBL::DBSQL::DBAdaptor;
+#use Bio::EnsEMBL::Registry;
+#use Bio::EnsEMBL::Variation::DBSQL::DBAdaptor;
+#use Bio::EnsEMBL::DBSQL::DBAdaptor;
 
 #use BIO::Species;
 use Getopt::Long;
@@ -50,10 +50,6 @@ my @requestedSpeciesFullName = &getFullNames(@requestedSpecies);
 print STDERR "@requestedSpeciesFullName\n";
 &connect();
 
-# my $inputdbA= &getDbAdaptor($inputSpecies,"core");
-#print STDERR "inputdbA $inputdbA, $inputSpecies\n";
-
-#my $inputga=$inputdbA->get_GeneAdaptor();
 my $inputga = &getGeneAdaptorForSpecies($inputSpecies);
 my $inputGene;
 if ( $id =~ /EN.*G\d+/ ) {
@@ -70,9 +66,6 @@ else {
 
 my $geneName = $inputGene->stable_id;
 print STDERR "input Gene is $inputSpecies,$geneName\n";
-
-#my $inputga=getGeneAdaptorForSpecies($inputSpecies);
-#my $inputGene=
 
 my $member_adaptor   = &getComparaMemberAdaptor();
 my $homology_adaptor = &getComparaHomologyAdaptor();
